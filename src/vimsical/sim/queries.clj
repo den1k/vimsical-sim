@@ -124,17 +124,6 @@
       {:user/settings
        [:db/id {:settings/playback [:db/id :playback/speed]}]}]}])
 
-(defn add-change
-  [user-id vims-id branch-id file-id store-id deltas timeline]
-  `[(vims/add-change
-     {{:user_id   ~user-id
-       :vims_id   ~vims-id
-       :branch_id ~branch-id
-       :file_id   ~file-id
-       :store_id  ~store-id}
-      {:deltas ~deltas
-       :timeline ~timeline}})])
-
 ;; [(vims/add-change
 ;;   {{:user_id 17592186045568,
 ;;     :vims_id 17592186045603,
