@@ -15,18 +15,64 @@
   (a/go
     (let [client-stream-deferred (http/websocket-client url options)
           client-stream-chan     (m/deferred->chan client-stream-deferred)
-          client-stream          (a/<! client-stream-chan)]
+          client-stream          (a/<! client-stream-chan)
+          opts                   {:downstream? true :upstream? true}]
       (do
         ;; Create a 2-way connection between the aleph client-stream and our
         ;; internal channels, note that we cannot use the same channel for read
         ;; and write or we'd cause a loop
-        (s/connect client-stream read-chan)
-        (s/connect write-chan client-stream)
+        (s/connect client-stream read-chan opts)
+        (s/connect write-chan client-stream opts)
         ;; Reify a read/write port that dispatches to the internal channels
         (reify
+          p/Channel
+          (closed? [_]
+            (or (p/closed? read-chan)
+                (p/closed? write-chan)))
+          (close! [_]
+            (p/close! read-chan)
+            (p/close! write-chan))
           p/ReadPort
           (take! [_ fn1-handler]
             (p/take! read-chan fn1-handler))
           p/WritePort
           (put! [port val fn1-handler]
             (p/put! write-chan val fn1-handler)))))))
+
+
+(comment
+  ;; Stream x chan interop
+  (let [s (s/stream)
+        c (a/chan)]
+    (s/connect s c)
+    (s/connect c s)
+    ;; Stream -> chan
+    (s/put! s 1)
+    (a/<!! c)
+    ;; Chan -> stream
+    (a/>!! c 1)
+    (s/take! s)))
+
+(comment
+  (require '[manifold.deferred :as d])
+  (defn echo-handler
+    [req]
+    (-> (http/websocket-connection req)
+        (d/chain
+         (fn [socket]
+           (s/connect socket socket)))))
+
+  (def port 10000)
+
+  (defonce server (http/start-server echo-handler {:port port}))
+
+  (def client
+    (a/<!!
+     (new-client-chan
+      (format "ws://localhost:%s" port)
+      {}
+      (a/chan 1)
+      (a/chan 1))))
+
+  (a/>!! client "a")
+  (a/<!! client))

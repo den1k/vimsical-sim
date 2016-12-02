@@ -1,5 +1,6 @@
 (ns vimsical.sim.util.transit
   (:require
+   [taoensso.timbre :refer [error]]
    [om.tempid]
    [om.transit]
    [cognitect.transit :as t])
@@ -30,24 +31,30 @@
 
 (defn transit-write-string
   [object]
-  (let [baos   (ByteArrayOutputStream.)
-        writer (t/writer baos :json writer-opts)
-        _      (t/write writer object)
-        ret    (.toString baos)]
-    (.reset baos)
-    ret))
+  (try
+    (let [baos   (ByteArrayOutputStream.)
+          writer (t/writer baos :json writer-opts)
+          _      (t/write writer object)
+          ret    (.toString baos)]
+      (.reset baos)
+      ret)
+    (catch Throwable t
+      (error t object "Transit encoding error"))))
 
 (defn transit-read-string
-  [s]
-  (t/read
-   (t/reader s :json reader-opts)))
-
+  [^String s]
+  (try
+    (clojure.pprint/pprint {"READING" s})
+    (let [bs (.getBytes s)
+          in (ByteArrayInputStream. bs)]
+      (t/read
+       (t/reader in :json reader-opts)))
+    (catch Throwable t
+      (error t s "Transit decoding error"))))
 
 (comment
   (let [o {:a (into (sorted-map) {1 1 2 2})}]
     (-> o
         (transit-write-string)
-        .getBytes
-        (ByteArrayInputStream.)
         (transit-read-string)
         (= o))))
