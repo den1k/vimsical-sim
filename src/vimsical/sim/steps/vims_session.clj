@@ -1,8 +1,7 @@
 (ns vimsical.sim.steps.vims-session
   (:require
-   [taoensso.timbre :refer [debug error]]
    [clojure.core.async :as a]
-   [vimsical.sim.steps.ctx :as ctx]))
+   [taoensso.timbre :refer [debug error]]))
 
 (defn ctx->tx
   [{:keys [app-user-id vims-id]}]

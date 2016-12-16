@@ -1,8 +1,8 @@
 (ns vimsical.sim.steps.user
   (:require
+   [clojure.core.async :as a]
    [clojure.string :as s]
    [taoensso.timbre :refer [debug error]]
-   [clojure.core.async :as a]
    [vimsical.sim.util.http :as http]))
 
 (def app-user-query

@@ -4,5 +4,6 @@
 
 (defn new-sim
   [rng pens]
+  {:pre [(seq pens)] :post [(seq (:scenarios %))]}
   {:name      "Vimsical X Codepen"
-   :scenarios (mapv pen/new-scenario pens)})
+   :scenarios (mapv (partial pen/new-scenario rng) pens)})

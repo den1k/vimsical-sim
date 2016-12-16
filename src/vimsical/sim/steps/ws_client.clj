@@ -61,7 +61,8 @@
     (try
       (debug "WS" ctx)
       (let [err         (fn [e] (error e))
-            url         (format "%s?client-id=%s" ws-url (uuid-str))
+            client-id   (uuid-str)
+            url         (format "%s?client-id=%s" ws-url client-id)
             read-chan   (a/chan
                          default-buffer-size
                          (comp
@@ -70,6 +71,7 @@
                           (remove (fn [e] (matches-event? e ignored-events))))
                          err)
             write-chan  (a/chan default-buffer-size (map sente-pack) err)
+            _           (debug "create client for user" user-id client-id )
             client-chan (ws/new-client-chan url {:headers headers} read-chan write-chan)
             conn-chan   (a/<! client-chan)
             handshake   (a/<! conn-chan)]

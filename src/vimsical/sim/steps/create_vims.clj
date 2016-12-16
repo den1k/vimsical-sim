@@ -1,10 +1,10 @@
 (ns vimsical.sim.steps.create-vims
   (:require
+   [clojure.core.async :as a]
+   [om.tempid :as om]
    [taoensso.timbre :refer [debug error]]
-   [om.next :as om]
-   [vimsical.sim.util.http :as http]
    [vimsical.sim.steps.user :as user]
-   [clojure.core.async :as a]))
+   [vimsical.sim.util.http :as http]))
 
 ;; * Query
 
