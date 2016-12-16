@@ -2,16 +2,21 @@
   (:require
    [clojure.core.async :as a]
    [clojure.core.async.impl.protocols :as p]
-   [manifold.deferred :as d]))
+   [manifold.deferred :as d]
+   [manifold.stream :as s]
+   [taoensso.timbre :refer [error]]))
 
 ;; * Manifold -> core.async
 
 (defn deferred->chan [d]
-  (reify p/ReadPort
-    (take! [_ fn1-handler]
-      (if (realized? d)
-        d
-        (d/on-realized d fn1-handler fn1-handler)))))
+  (let [source (d/chain' d (fn [v] (if (nil? v) ::nil v)))
+        sink   (a/chan 1 (remove (partial identical? ::nil)))]
+    (s/connect source sink {:upstream? true :downstream? true})
+    sink))
 
 (comment
-  (assert (= 1 (a/<!! (deferred->chan (d/future 1))))))
+  (do
+    (a/<!! (a/into [] (deferred->chan (d/future (Thread/sleep 100)))))
+    (assert (= 1 (a/<!! (deferred->chan (d/future (Thread/sleep 100) 1)))))
+    (a/go (assert (= 1 (a/<! (deferred->chan (d/future (Thread/sleep 100) 1))))))
+    (a/go (assert (= nil (a/<! (deferred->chan (d/future (Thread/sleep 100)))))))))

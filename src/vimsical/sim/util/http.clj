@@ -1,8 +1,7 @@
 (ns vimsical.sim.util.http
   (:require
    [aleph.http :as http]
-   [aleph.http.client-middleware :as middleware]
-   [byte-streams :as bs]
+   [taoensso.timbre :refer [error]]
    [vimsical.sim.util.manifold :as m]
    [vimsical.sim.util.transit :as t]))
 
@@ -15,8 +14,7 @@
 (defn wrap-req-transit-body
   [handler]
   (fn [req]
-    (handler
-     (encode-request req))))
+    (-> req encode-request handler)))
 
 (def defaults
   {:request-method :post
@@ -29,5 +27,3 @@
   (m/deferred->chan
     (http/request
      (merge defaults req))))
-
-
