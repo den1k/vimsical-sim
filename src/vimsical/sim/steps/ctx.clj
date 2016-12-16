@@ -13,19 +13,6 @@
    [vimsical.sim.util.ws :as ws]
    [vimsical.sim.util.rand :as rand]))
 
-;; * RNG
-
-(defn rng-step-fn
-  [{:keys [user-id] :as ctx}]
-  {:pre  [user-id]}
-  (a/go
-    (debug "Step" ctx)
-    [true (assoc ctx :rng (rand/rng user-id))]))
-
-(def rng-step
-  {:name    "Setup ctx RNG"
-   :request rng-step-fn})
-
 ;; * Sente compat
 
 (def transit-packer
@@ -55,15 +42,36 @@
     (catch Throwable t
       (error t s))))
 
+
+;; * Events
+
+(def ignored-events #{:chsk/ping})
+
+(defn poll-error
+  [conn-chan]
+  (when-let [[id :as ev] (a/poll! conn-chan)]
+    (if (= :store.sync.protocol.response/error ev)
+      ev
+      (println "Ignoring event" ev))))
+
+
+;; * Client
+
+(def default-buffer-size 1024)
+
 (defn ws-chan-step-fn
   [{:keys [ws-url headers user-id] :as ctx}]
   {:pre [ws-url headers]}
   (a/go
     (try
       (debug "WS" ctx)
-      (let [url         (format "%s?client-id=%s" ws-url user-id)
-            read-chan   (a/chan 1024 (map sente-unpack))
-            write-chan  (a/chan 1024 (map sente-pack))
+      (let [err         (fn [e] (do (error e) nil))
+            url         (format "%s?client-id=%s" ws-url user-id)
+            read-chan   (a/chan default-buffer-size
+                                (comp
+                                 (map sente-unpack)
+                                 (remove (fn [[id]] (ignored-events id)))) err)
+            write-chan  (a/chan default-buffer-size (map sente-pack) err)
             client-chan (ws/new-client-chan url {:headers headers} read-chan write-chan)
             conn-chan   (a/<! client-chan)
             handshake   (a/<! conn-chan)]
@@ -72,6 +80,11 @@
       (catch Throwable t
         (error t)))))
 
+
+;; * Steps
+
 (def ws-chan-step
   {:name    "Assoc :ws-chan in the ctx map"
    :request ws-chan-step-fn})
+
+

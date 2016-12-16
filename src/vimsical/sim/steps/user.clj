@@ -72,6 +72,7 @@
             resp         (a/<! (http/req-chan req))]
         (debug "Req" req)
         (debug "Resp" resp)
+        (debug "Valid?" (valid-user-resp? resp))
         [(valid-user-resp? resp) (merge-ctx ctx resp)])
       (catch Throwable t
         (error t)))))
