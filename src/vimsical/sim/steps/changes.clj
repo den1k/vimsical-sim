@@ -1,7 +1,7 @@
 (ns vimsical.sim.steps.changes
   (:require
    [vimsical.sim.steps.ws-client :as ws-client]
-   [taoensso.timbre :refer [debug error]]
+   [taoensso.timbre :refer [trace debug info error]]
    [vimsical.sim.util.rand :as rand]
    [clojure.core.async :as a]))
 
@@ -17,8 +17,12 @@
 
 (defn unique-timestamps?
   [delta-ids]
-  (let [ts (map #(nth % 2) delta-ids)]
-    (= ts (distinct ts))))
+  (reduce
+   (fn [^long prev [_ _ ^long curr]]
+     (if (== prev curr)
+       (reduced false)
+       curr))
+   -1 delta-ids))
 
 (defn- zip-delta-ids
   [tick-fn string]
@@ -127,40 +131,50 @@
 (defn new-add-change-fn
   [changes]
   (fn add-change-fn
-    [{:as ctx
+    [{:as   ctx
       :keys [t
              ws-chan
              rng
              token app-user-id vims-id branch-id
              stores]
-      :or {t -1}}]
+      :or   {t -1}}]
     {:pre [ws-chan rng app-user-id vims-id branch-id (seq stores)]}
-    (cond
-      ;; No retry strategy yet
-      (ws-client/poll-error ws-chan)
-      (do (debug "error") false)
+    (try
+      (debug "Step" ctx)
+      (cond
+        ;; No retry strategy yet
+        (ws-client/poll-error ws-chan)
+        (do (error "got error") false)
 
-      :else
-      (a/go
-        (try
-          (let [tx    (changes->tx changes token app-user-id vims-id branch-id stores)
-                t'    (tx-max-time tx)
-                dt    (- (long t') (long t))
-                _wait (a/<! (a/timeout dt))
-                _put  (a/>! ws-chan tx)]
-            (debug "Tx" tx)
-            [true (assoc ctx :t t')])
-          (catch Throwable t
-            (error t)))))))
+        :else
+        (a/go
+          (try
+            (let [tx     (changes->tx changes token app-user-id vims-id branch-id stores)
+                  t'     (tx-max-time tx)
+                  dt     (- (long t') (long t))
+                  _ (info "delta" dt)
+                  _wait  (a/<! (a/timeout (max dt (- dt))))
+                  _offer (a/offer! ws-chan tx)]
+              (when-not _offer
+                (a/close! ws-chan)
+                (error "offer failed"))
+              (trace "Tx" tx)
+              [_offer (assoc ctx :t t')])
+            (catch Throwable t
+              (error t)))))
+      (catch Throwable t
+        (a/close! ws-chan)
+        (error t)))))
 
 (defn new-pen-changes-steps
   [rng {:keys [id] :as pen}]
   (->> pen
        (pen->detlas-and-timelines rng)
        (partition-changes)
-       (map-indexed (fn [i changes]
-                      {:name    (str "add-change" id "-" i)
-                       :request (new-add-change-fn changes)}))))
+       (map-indexed
+        (fn [i changes]
+          {:name    "add-change"
+           :request (new-add-change-fn changes)}))))
 
 (comment
   (partition-changes
@@ -171,13 +185,4 @@
     "foo" 1 2 3
     [{:db/id 4 :store/file {:db/id 5 :file/content-type "text/css"}}
      {:db/id 6 :store/file {:db/id 7 :file/content-type "text/html"}}
-     {:db/id 8 :store/file {:db/id 9 :file/content-type "text/javascript"}}]
-    )))
-
-
-{{:vims_id 17592186045872, :branch_id 17592186045873, :user_id 17592186045871, :file_id 17592186045878, :store_id 17592186045874}
- {:timeline {0 #{{:delta-id 1, :change-amount 1, :change-type :string/insert}},
-             13 #{{:delta-id 2, :change-amount 0, :change-type :cursor/move}}},
-  :deltas {0 [nil ""],
-           1 [0 [:string/insert [0 "<"]]],
-           2 [1 [:cursor/move [1]]]}}}
+     {:db/id 8 :store/file {:db/id 9 :file/content-type "text/javascript"}}])))

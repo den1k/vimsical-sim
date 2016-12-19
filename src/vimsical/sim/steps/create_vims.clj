@@ -89,8 +89,8 @@
                   :url            remote-url
                   :body           (create-vims-query (om/tempid))}
             resp (a/<! (http/req-chan req))]
-        (debug "Req" req)
-        (debug "Resp" resp)
+        (when-not (valid-new-vims-resp? resp)
+          (error "invalid resp" resp))
         [(valid-new-vims-resp? resp) (merge-vims-ctx ctx resp)])
       (catch Throwable t
         (error t)))))

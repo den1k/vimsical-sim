@@ -70,9 +70,8 @@
                           :url            remote-url
                           :body           app-user-query}
             resp         (a/<! (http/req-chan req))]
-        (debug "Req" req)
-        (debug "Resp" resp)
-        (debug "Valid?" (valid-user-resp? resp))
+        (when-not (valid-user-resp? resp)
+          (error "Invalid resp" resp))
         [(valid-user-resp? resp) (merge-ctx ctx resp)])
       (catch Throwable t
         (error t)))))

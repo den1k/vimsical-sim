@@ -2,18 +2,22 @@
   (:require
    [clojure.core.async :as a]
    [taoensso.timbre :refer [debug]]
-   [vimsical.sim.util.rand :as rand]))
+   [vimsical.sim.util.rand :as rand])
+  (:import
+   (java.util Random)))
 
 ;; * RNG
 
-(defn rng-step-fn
-  [{:keys [user-id] :as ctx}]
-  {:pre  [user-id]}
-  (a/go
-    (debug "Step" ctx)
-    [true (assoc ctx :rng (rand/rng user-id))]))
+(defn new-rng-step-fn
+  [^Random rng]
+  (fn rng-step-fn
+    [{:keys [user-id] :as ctx}]
+    {:pre  [user-id]}
+    (a/go
+      (debug "Step" ctx)
+      [true (assoc ctx :rng (rand/rng (.nextLong rng)))])))
 
-(def rng-step
+(defn new-rng-step
+  [rng]
   {:name    "Setup ctx RNG"
-   :request rng-step-fn})
-
+   :request (new-rng-step-fn rng)})
