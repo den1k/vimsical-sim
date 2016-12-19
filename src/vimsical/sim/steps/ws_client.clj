@@ -24,7 +24,6 @@
 (defn sente-unpack
   [s]
   (let [resp (#'sente/unpack transit-packer s)]
-    (debug "resp:" resp)
     (if (vector? resp)
       (first resp)
       resp)))
@@ -54,6 +53,16 @@
 
 (def default-buffer-size 1024)
 
+(defn log-xf
+  [txt]
+  (map (fn [e] (do (debug txt e) e))))
+
+(def ignore-events-xf
+  (remove (fn [e] (matches-event? e ignored-events))))
+
+(def read-xf (comp (map sente-unpack) ignore-events-xf))
+(def write-xf (map sente-pack))
+
 (defn ws-chan-step-fn
   [{:keys [ws-url headers user-id] :as ctx}]
   {:pre [ws-url headers]}
@@ -63,19 +72,13 @@
       (let [err         (fn [e] (error e))
             client-id   (uuid-str)
             url         (format "%s?client-id=%s" ws-url client-id)
-            read-chan   (a/chan
-                         default-buffer-size
-                         (comp
-                          (map sente-unpack)
-                          (map (fn [e] (debug e) e))
-                          (remove (fn [e] (matches-event? e ignored-events))))
-                         err)
-            write-chan  (a/chan default-buffer-size (map sente-pack) err)
-            _           (debug "create client for user" user-id client-id )
+            read-chan   (a/chan default-buffer-size read-xf err)
+            write-chan  (a/chan default-buffer-size write-xf err)
             client-chan (ws/new-client-chan url {:headers headers} read-chan write-chan)
             conn-chan   (a/<! client-chan)
             handshake   (a/<! conn-chan)]
-        (debug "Conn: valid?" (valid-handshake? handshake) conn-chan handshake)
+        (when-not (valid-handshake? handshake)
+          (error "invalid handshake" handshake))
         [(valid-handshake? handshake) (assoc ctx :ws-chan conn-chan)])
       (catch Throwable t
         (error t)))))

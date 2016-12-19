@@ -1,10 +1,10 @@
 (ns vimsical.sim.util.ws
   (:require
-   [taoensso.timbre :refer [error]]
    [aleph.http :as http]
    [clojure.core.async :as a]
    [clojure.core.async.impl.protocols :as p]
    [manifold.stream :as s]
+   [taoensso.timbre :refer [error]]
    [vimsical.sim.util.manifold :as m]))
 
 ;; * Client
@@ -17,47 +17,41 @@
     (try
       (let [client-stream-deferred (http/websocket-client url options)
             client-stream-chan     (m/deferred->chan client-stream-deferred)
-            client-stream          (a/<! client-stream-chan)
-            opts                   {:downstream? true :upstream? true}]
+            client-stream          (a/<! client-stream-chan)]
         (do
           ;; Create a 2-way connection between the aleph client-stream and our
           ;; internal channels, note that we cannot use the same channel for read
           ;; and write or we'd cause a loop
-          (s/connect
-           (s/->source client-stream)
-           (s/->sink read-chan)
-           opts)
-          (s/connect
-           (s/->source write-chan)
-           (s/->sink client-stream)
-           opts)
+          (s/connect client-stream read-chan ;; {:upstream? true}
+                     )
+          (s/connect write-chan client-stream ;; {:downstream? true}
+                     )
           ;; Reify a read/write port that dispatches to the internal channels
           (reify
             p/Channel
             (closed? [_]
-              (or (p/closed? read-chan)
-                  (p/closed? write-chan)))
+              (and (p/closed? read-chan)
+                   (p/closed? write-chan)))
             (close! [_]
               (p/close! read-chan)
               (p/close! write-chan))
-
             p/ReadPort
             (take! [_ fn1-handler]
-              (try
-                (p/take! read-chan fn1-handler)
-                (catch Throwable t
-                  (error t)
-                  (throw t))))
+              (p/take! read-chan fn1-handler))
             p/WritePort
             (put! [port val fn1-handler]
-              (try
-                (p/put! write-chan val fn1-handler)
-                (catch Throwable t
-                  (error t)
-                  (throw t)))))))
+              (p/put! write-chan val fn1-handler)))))
       (catch Throwable t
         (error t)))))
 
+(assert
+ (let [s (s/stream)
+       c (a/chan 1)]
+   (s/connect s c)
+   (s/put! s 1)
+   (s/put! s 2)
+   (s/put! s 3)
+   (= [1 2 3] [(a/<!! c) (a/<!! c) (a/<!! c)])))
 
 (comment
   ;; Stream x chan interop
@@ -67,10 +61,14 @@
     (s/connect c s)
     ;; Stream -> chan
     (s/put! s 1)
-    (a/<!! c)
+    (s/put! s 2)
+    (s/put! s 3)
+    (println (a/<!! c))
+    (println (a/<!! c))
+    (println (a/<!! c))
     ;; Chan -> stream
     (a/>!! c 1)
-    (s/take! s)))
+    (assert (= 1 @(s/take! s)))))
 
 (comment
   (do
@@ -81,7 +79,6 @@
           (d/chain
            (fn [socket]
              (s/connect socket socket)))))
-
     (def port 10000)
     (defonce server (http/start-server echo-handler {:port port}))
     (def client

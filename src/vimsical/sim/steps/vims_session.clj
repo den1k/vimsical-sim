@@ -11,30 +11,38 @@
           :store.sync.protocol/vims-id vims-id})])
 
 (defn valid-resp?
-  [[[_ {:keys
-        [store.sync.protocol/token
-         store.sync.protocol/primary-keys]}]]]
-  (and token (empty? primary-keys)))
+  [resp]
+  (try
+    (let [[[_ {:keys
+               [store.sync.protocol/token
+                store.sync.protocol/primary-keys]}]] resp]
+      (and token (empty? primary-keys)))
+    (catch Throwable t
+      (error t resp))))
 
 (defn merge-resp
-  [ctx [[_ {:keys [store.sync.protocol/token]}]]]
-  {:post [(some? (:token %))]}
-  (assoc ctx :token token))
+  [ctx resp]
+  (try
+    (let [[[_ {:keys [store.sync.protocol/token]}]] resp]
+      (debug "token" token)
+      (assoc ctx :token token))
+    (catch Throwable t
+      (error t resp))))
 
 (defn create-vims-session-step-fn
   [{:keys [ws-chan] :as ctx}]
   {:pre [ws-chan]}
   (a/go
-    (debug "Step")
     (try
+      (debug "Step")
       (let [tx   (ctx->tx ctx)
-            _    (debug tx)
             _put (a/>! ws-chan tx)
-            _    (debug "put" _put)
-            [resp _] (a/alts! [ws-chan (a/timeout 10000)])]
-        (debug "valid" (valid-resp? resp) resp)
+            resp (a/<! ws-chan)]
+        (when-not (valid-resp? resp)
+          (error "invalid resp" resp tx))
         [(valid-resp? resp) (merge-resp ctx resp)])
       (catch Throwable t
+        (a/close! ws-chan)
         (error t)))))
 
 (def vims-session-step
