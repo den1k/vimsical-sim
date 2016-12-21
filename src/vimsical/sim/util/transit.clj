@@ -1,14 +1,14 @@
 (ns vimsical.sim.util.transit
   (:require
-   [taoensso.timbre :refer [error]]
    [om.tempid]
    [om.transit]
-   [cognitect.transit :as t])
+   [cognitect.transit :as t]
+   [taoensso.timbre :refer [error]])
   (:import
    clojure.lang.PersistentTreeMap
    (com.cognitect.transit ReadHandler WriteHandler)
-   (om.tempid TempId)
    (java.io ByteArrayInputStream ByteArrayOutputStream)
+   om.tempid.TempId
    om.transit.TempIdHandler))
 
 (def reader-opts

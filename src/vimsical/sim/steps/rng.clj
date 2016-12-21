@@ -3,8 +3,7 @@
    [clojure.core.async :as a]
    [taoensso.timbre :refer [debug]]
    [vimsical.sim.util.rand :as rand])
-  (:import
-   (java.util Random)))
+  (:import java.util.Random))
 
 ;; * RNG
 

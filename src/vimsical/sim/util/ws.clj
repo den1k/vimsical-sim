@@ -7,6 +7,7 @@
    [taoensso.timbre :refer [error]]
    [vimsical.sim.util.manifold :as m]))
 
+
 ;; * Client
 
 (defn new-client-chan
@@ -22,10 +23,8 @@
           ;; Create a 2-way connection between the aleph client-stream and our
           ;; internal channels, note that we cannot use the same channel for read
           ;; and write or we'd cause a loop
-          (s/connect client-stream read-chan ;; {:upstream? true}
-                     )
-          (s/connect write-chan client-stream ;; {:downstream? true}
-                     )
+          (s/connect client-stream read-chan {:upstream? true})
+          (s/connect write-chan client-stream {:downstream? true})
           ;; Reify a read/write port that dispatches to the internal channels
           (reify
             p/Channel
@@ -43,6 +42,9 @@
               (p/put! write-chan val fn1-handler)))))
       (catch Throwable t
         (error t)))))
+
+
+;; * Testing
 
 (assert
  (let [s (s/stream)

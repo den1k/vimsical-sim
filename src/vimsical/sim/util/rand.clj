@@ -1,6 +1,5 @@
 (ns vimsical.sim.util.rand
-  (:import
-   (java.util Random)))
+  (:import java.util.Random))
 
 ;; * RNG
 
@@ -41,6 +40,13 @@
    (let [total    (atom 0)]
      (fn mutable-tick []
        (swap! total + (tick rng skew bias))))))
+
+(defn gaussian
+  [^Random rng]
+  (.nextGaussian rng))
+
+
+;; * Testing
 
 (comment
   (do

@@ -1,7 +1,6 @@
 (ns vimsical.sim.util.http
   (:require
    [aleph.http :as http]
-   [taoensso.timbre :refer [error]]
    [vimsical.sim.util.manifold :as m]
    [vimsical.sim.util.transit :as t]))
 

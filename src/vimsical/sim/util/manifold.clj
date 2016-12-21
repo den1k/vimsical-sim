@@ -1,10 +1,8 @@
 (ns vimsical.sim.util.manifold
   (:require
    [clojure.core.async :as a]
-   [clojure.core.async.impl.protocols :as p]
    [manifold.deferred :as d]
-   [manifold.stream :as s]
-   [taoensso.timbre :refer [error]]))
+   [manifold.stream :as s]))
 
 ;; * Manifold -> core.async
 
