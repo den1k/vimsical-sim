@@ -7,46 +7,47 @@
 
 (def app-user-query
   '[{:app/user
-     [:db/id
+     [:user/uuid
       :user/first-name
       :user/last-name
       :user/email
-      :user/password
       {:user/vimsae
-       [:db/id
+       [:vims/uuid
         :vims/title
-        {:vims/owner [:db/id :user/first-name :user/last-name]}
+        {:vims/owner [:user/uuid :user/first-name :user/last-name]}
         {:vims/master-branch
-         [:db/id
-          :branch/start-time
-          :branch/end-time
-          {:branch/author [:db/id :user/first-name :user/last-name]}
-          {:branch/stores
-           [:db/id
-            {:store/file [:db/id :file/content-type]}
-            :store/deltas
-            :store/timeline
-            :store.derived/current-delta-id]}]}
+         [:branch/uuid
+          {:branch/parent ...}
+          :branch/entry-delta-id
+          :branch/start-delta-id
+          :branch/created-at
+          {:branch/files
+           [:file/uuid
+            :file/type
+            :file/sub-type]}
+          {:branch/owner
+           [:user/uuid
+            :user/first-name
+            :user/last-name]}]}
         {:vims/branches
-         [:db/id
-          :branch/start-time
-          :branch/end-time
-          {:branch/author [:db/id :user/first-name :user/last-name]}
-          {:branch/stores
-           [:db/id
-            {:store/file [:db/id :file/content-type]}
-            :store/deltas
-            :store/timeline
-            :store.derived/current-delta-id]}]}
-        {:vims.derived/slices
-         [:slice/start
-          :slice/end
-          :slice/duration
-          :slice/branch-depth
-          :slice/time-in-branch
-          :slice/branch]}]}
+         [:branch/uuid
+          {:branch/parent ...}
+          :branch/entry-delta-id
+          :branch/start-delta-id
+          :branch/created-at
+          {:branch/files
+           [:file/uuid
+            :file/type
+            :file/sub-type]}
+          {:branch/owner
+           [:user/uuid
+            :user/first-name
+            :user/last-name]}]}]}
       {:user/settings
-       [:db/id {:settings/playback [:db/id :playback/speed]}]}]}])
+       [:settings/uuid
+        {:settings/playback
+         [:playback/uuid
+          :playback/speed]}]}]}])
 
 (defn extract-session-cookie
   [resp]

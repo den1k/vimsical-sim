@@ -3,9 +3,11 @@
    [clojure.core.async :as a]
    [taoensso.timbre :refer [debug error trace]]
    [vimsical.sim.steps.ws-client :as ws-client]
-   [vimsical.sim.util.rand :as rand]))
+   [vimsical.sim.util.rand :as rand]
+   [vimsical.sim.util.uuid :as uuid]))
 
-;; * Delta graph
+
+;; * Delta helpers
 
 (defn- prev-delta-id
   [^long delta-id]
@@ -14,216 +16,151 @@
 
 (defn- char->str [c] (when c (str c)))
 
-(defn unique-timestamps?
-  [delta-ids]
-  (reduce
-   (fn [^long prev [_ _ ^long curr]]
-     (if (== prev curr)
-       (reduced false)
-       curr))
-   -1 delta-ids))
-
 (defn- zip-delta-ids
-  [tick-fn string]
-  {:post [(unique-timestamps? %)]}
+  [tick-fn start-delta-id string]
   (letfn [(ticks [] (let [t (long (tick-fn))] [t (inc t)]))]
     (let [deltas-count (count string)
           len          (* 2 deltas-count)
-          indexes      (range len)
-          strs         (map char->str (into [""] (interleave string  (repeat nil))))
+          indexes      (range start-delta-id (+ start-delta-id len))
+          strs         (map char->str (interleave string  (repeat nil)))
           times        (take len (mapcat identity (repeatedly ticks)))]
       (map vector indexes strs times))))
-
-(comment
-  (zip-delta-ids (rand/new-mutable-tick (rand/rng)) "abcd")
-  ([0 "" 0]
-   [1 "a" 1]
-   [2 nil 13]
-   [3 "b" 14]
-   [4 nil 26]
-   [5 "c" 27]
-   [6 nil 39]
-   [7 "d" 40]))
 
 
 ;; * Codepen -> deltas
 
-(defn- pen->detlas-and-timelines
-  "Given a pen returns a seq of maps with values for :deltas and :timeline
-  representing the arguments to add change for the given pen.}"
+(defn- pen->detlas
   [rng {:keys [code]}]
-  (let [tick (rand/new-mutable-tick rng)]
-    (for [code-type           [:html :css :js]
-          :let                [string (get code code-type)]
-          [index character t] (zip-delta-ids tick string)
-          :when               (pos? (count string))]
-      (let [prev-id       (prev-delta-id index)
-            change-amount (count character)
-            change-type   (cond
-                            (pos? change-amount) :string/insert
-                            (zero? (long index)) :branch/new
-                            :else                :cursor/move)
-            change-meta   (case change-type :cursor/move [prev-id] [prev-id character])
-            change        (if prev-id [change-type change-meta] "")]
-        {:type   code-type
-         :deltas {index [prev-id change]}
-         :timeline
-         (into
-          (sorted-map)
-          {t #{{:delta-id      index
-                :change-type   change-type
-                :change-amount change-amount}}})}))))
+  (let [sub-type {:html :html :css :css :js :javascript}]
+    (loop [[pen-sub-type :as pen-sub-types] [:html :css :js]
+           current-delta-id                 0
+           time-acc                         0
+           deltas-acc                       []]
+      (if-not (seq pen-sub-types)
+        deltas-acc
+        (let [string                (get code pen-sub-type)
+              delta-ids             (zip-delta-ids (partial rand/tick rng) current-delta-id string)
+              sub-type              (get sub-type pen-sub-type)
+              {:keys [deltas time]} (reduce
+                                     (fn [{:keys [time deltas]} [id chr pad]]
+                                       (let [prev-id       (prev-delta-id id)
+                                             change-amount (count chr)
+                                             op            (if (pos? change-amount)
+                                                             [:str/ins prev-id (str chr)]
+                                                             [:crsr/mv prev-id])]
+                                         {:time   (+ (long time) (long pad))
+                                          :deltas (conj
+                                                   deltas
+                                                   {:id            id
+                                                    :prev-id       prev-id
+                                                    ;; Edits in a new file don't
+                                                    ;; have a :prev-same-id
+                                                    :prev-same-id  (when (seq deltas) prev-id)
+                                                    :op            op
+                                                    :pad           pad
+                                                    :file/sub-type sub-type
+                                                    :meta          {:timestamp time, :version 1.0}})}))
+                                     {:time 0 :deltas []} delta-ids)]
+          (recur
+           (next pen-sub-types)
+           (or (some-> delta-ids last first inc) current-delta-id)
+           (+ (long time-acc) (long time))
+           (into deltas-acc deltas)))))))
 
-(comment
-  (pen->detlas-and-timelines (java.util.Random.) {:code {:js "var foo = bar;"}}))
+(defn find-file-by-sub-type
+  [target-sub-type files]
+  {:post [%]}
+  (some
+   (fn [{:keys [file/sub-type] :as file}] (when (= target-sub-type sub-type) file))
+   files))
 
-(defn- code-type->content-type
-  [code-key]
-  (get {:css "text/css" :html "text/html" :js "text/javascript"} code-key))
+(defn- deltas->tx
+  [deltas token branch-uuid files]
+  {:pre [(some? token) (uuid/uuid? branch-uuid) (seq files)]}
+  [(list
+    'vims/add-deltas
+    {:store.sync.protocol/token token
+     :store.sync.protocol/deltas
+     (mapv
+      (fn update-delta-with-file-and-branch
+        [{:keys [file/sub-type] :as delta}]
+        (let [{:keys [file/uuid]} (find-file-by-sub-type sub-type files)]
+          (-> delta
+              (dissoc :file/sub-type)
+              (assoc :file-uuid uuid :branch-uuid branch-uuid))))
+      deltas)})])
 
-(defn- find-store
-  [code-type stores]
-  {:post [(-> % :db/id) (-> % :store/file :db/id)]}
-  (let [content-type (code-type->content-type code-type)]
-    (some
-     (fn [{:keys [store/file] :as store}]
-       (and (= content-type (:file/content-type file)) store))
-     stores)))
+(defn- deltas-time ^long
+  [deltas]
+  (reduce + (map :pad deltas)))
 
-(defn- changes->tx
-  [changes token app-user-id vims-id branch-id stores]
-  {:pre [(number? app-user-id)
-         (number? vims-id)
-         (number? branch-id)
-         (some? token)]}
-  (mapv
-   (fn [{:keys [deltas timeline type] :as dts}]
-     (let [{{file-id :db/id} :store/file store-id :db/id} (find-store type stores)]
-       (list
-        'vims/add-change
-        {:store.sync.protocol/token token
-         :store.sync.protocol/changes
-         {{:user_id   app-user-id
-           :vims_id   vims-id
-           :branch_id branch-id
-           :file_id   file-id
-           :store_id  store-id}
-          {:deltas deltas :timeline timeline}}})))
-   changes))
-
-(defn- tx-max-time [txs]
-  (or (some->> (for [[_ m] txs]
-                 (keys (:timeline (first (vals (:store.sync.protocol/changes m))))))
-               (apply concat)
-               (not-empty)
-               (apply max))
-      0))
+(defn- partition-deltas
+  ([deltas] (partition-all 2 deltas))
+  ([max-batch-interval-ms max-batch-count deltas]
+   {:post [(= deltas (apply concat %))]}
+   (let [batch (volatile! 0)
+         t     (volatile! 0)
+         size  (volatile! 0)]
+     (partition-by
+      (fn [{:keys [pad] :as delta}]
+        (if-not (or (>= (vswap! t unchecked-add pad) max-batch-interval-ms)
+                    (>= (vswap! size unchecked-inc) max-batch-count))
+          @batch
+          (do (vreset! size 0)
+              (vreset! t 0)
+              (vswap! batch inc))))
+      deltas))))
 
 
 ;; * Step
 
-(defn check-changes
-  [{:keys [deltas timeline] :as changes}]
-  (let [d (ffirst deltas)
-        t (first (map :delta-id (second (first timeline))))]
-    (assert d)
-    (assert t)
-    (assert (= d t)))
-  changes)
-
-(defn partition-changes
-  ([mutations]
-   {:post [(every? (fn [batch] (every? map? batch)) %)
-           (mapv (fn [batch] (mapv check-changes batch)) %)]}
-   ;; Need to send 3 mutations for the first one because of the stub
-   (let [head (vec (take 3 mutations))
-         tail (drop 3 mutations)]
-     (into [head] (comp
-                   (partition-all 2)
-                   (map vec))
-           tail)))
-  ([^long max-batch-interval-ms ^long max-batch-count mutations]
-   {:post [(every? (fn [batch] (every? map? batch)) %)
-           (mapv (fn [batch] (mapv check-changes batch)) %)]}
-   (letfn [(reduce-tail [tail]
-             (reduce
-              (fn [{:keys [coll batch ^long batch-begin] :as acc} {:keys [timeline deltas] :as el}]
-                (let [t      (long (apply max (keys timeline)))
-                      dt     (- t batch-begin)
-                      batch' (conj batch el)]
-                  (if (or (>= dt max-batch-interval-ms)
-                          (>= (count batch') max-batch-count))
-                    {:coll (conj coll batch') :batch [] :batch-begin t}
-                    {:coll coll :batch batch' :batch-begin batch-begin})))
-              {:coll [] :batch [] :batch-begin 0} tail))]
-     (let [head                 (vec (take 3 mutations))
-           tail                 (drop 3 mutations)
-           {:keys [coll batch]} (reduce-tail tail)]
-       (concat [head] coll [batch])))))
-
-(defn new-add-change-fn
-  [batch-interval-ms batch-max-count changes]
+(defn- new-add-deltas-fn
+  [deltas]
   (fn add-change-fn
     [{:as   ctx
-      :keys [t
-             ws-chan
-             rng
-             token app-user-id vims-id branch-id
-             stores]}]
-    {:pre [ws-chan rng app-user-id vims-id branch-id (seq stores)]}
-    (try
-      (debug "Step" ctx)
-      (if-let [err (ws-client/poll-error ws-chan)]
-        ;; No retry strategy yet
-        (error "error" err)
-        (a/go
-          (try
-            (let [tx     (changes->tx changes token app-user-id vims-id branch-id stores)
-                  ;; NOTE use a random delay so all clients don't start typing at the same time...
-                  t      (if-not (nil? t) t (* batch-interval-ms (rand/gaussian rng)))
-                  t'     (tx-max-time tx)
-                  dt     (- (long t') (long t))
-                  _wait  (a/<! (a/timeout (max dt (- dt))))
-                  _offer (a/offer! ws-chan tx)]
-              (when-not _offer
-                (a/close! ws-chan)
-                (error "offer failed"))
-              (trace "Tx delay" dt  tx)
-              [_offer (assoc ctx :t t')])
-            (catch Throwable t
-              (error t)))))
-      (catch Throwable t
-        (a/close! ws-chan)
-        (error t)))))
+      :keys [ws-chan rng token branch-uuid files]}]
+    {:pre [ws-chan rng branch-uuid (seq files)]}
+    (a/go
+      (try
+        (debug "Step" ctx)
+        (if-some [err (ws-client/poll-error ws-chan)]
+          ;; No retry strategy yet...
+          (error "error" err)
+          (let [tx     (deltas->tx deltas token branch-uuid files)
+                _ (debug tx)
+                _offer (a/offer! ws-chan tx)]
+            (when-not _offer
+              (a/close! ws-chan)
+              (error "offer failed"))
+            _offer))
+        (catch Throwable t
+          (a/close! ws-chan)
+          (error t))))))
 
 (defn new-pen-changes-steps
   [rng batch-interval-ms batch-max-count {:keys [id] :as pen}]
-  (->> pen
-       (pen->detlas-and-timelines rng)
-       (partition-changes batch-interval-ms batch-max-count)
-       (map-indexed
-        (fn [i changes]
-          {:name    "add-change"
-           :request (new-add-change-fn batch-interval-ms batch-max-count changes)}))))
-
+  ;; NOTE use a random delay so all clients don't start typing at the same time...
+  (let [init-sleep (* (double batch-interval-ms) (rand/gaussian rng))]
+    (->> pen
+         (pen->detlas rng)
+         (partition-deltas batch-interval-ms batch-max-count)
+         (reduce
+          (fn [{:keys [sleep steps] :as acc} deltas]
+            {:pre [(number? sleep)]}
+            {:sleep (deltas-time deltas)
+             :steps (conj steps
+                          {:name         "add-deltas"
+                           :request      (new-add-deltas-fn deltas)
+                           :sleep-before (constantly sleep)})})
+          {:sleep init-sleep :steps []})
+         :steps)))
 
 (comment
-  (defn report-batches
-    [changes]
-    (into (sorted-map)
-          (frequencies (map count changes))))
-
-  (let [changes (pen->detlas-and-timelines (java.util.Random.) {:images {:small "http://codepen.io/jtangelder/pen/ABFnd/image/small.png", :large "http://codepen.io/jtangelder/pen/ABFnd/image/large.png"}, :comments "1", :loves "11", :title "Vertical Pan Hammer.js example", :details "", :link "http://codepen.io/jtangelder/pen/ABFnd", :id "ABFnd", :code {:html "<script src=\"https://hammerjs.github.io/dist/hammer.js\"></script>\n\n<div id=\"myElement\"></div>", :css "#myElement {\n  background: silver;\n  height: 300px;\n  text-align: center;\n  font: 30px/300px Helvetica, Arial, sans-serif;\n}\n", :js "var myElement = document.getElementById('myElement');\n\n// create a simple instance\n// by default, it only adds horizontal recognizers\nvar mc = new Hammer(myElement);\n\n// let the pan gesture support all directions.\n// this will block the vertical scrolling on a touch-device while on the element\nmc.get('pan').set({ direction: Hammer.DIRECTION_ALL });\n\n// listen to events...\nmc.on(\"panleft panright panup pandown tap press\", function(ev) {\n    myElement.textContent = ev.type +\" gesture detected.\";\n});"}, :user {:nicename "Jorik Tangelder", :username "jtangelder", :avatar "https://gravatar.com/avatar/dd965ce7f185044f157d255cf3e65662?s=80&d=https://codepen.io/assets/avatars/user-avatar-80x80-fd2a2ade7f141e06f8fd94c000d6ac7a.png"}, :views "77196"})
-        batches (partition-changes 1000 1000 changes)
-        txs  (map
-              (fn [batch]
-                (changes->tx
-                 batch
-                 "foo" 1 2 3
-                 [{:db/id 4 :store/file {:db/id 5 :file/content-type "text/css"}}
-                  {:db/id 6 :store/file {:db/id 7 :file/content-type "text/html"}}
-                  {:db/id 8 :store/file {:db/id 9 :file/content-type "text/javascript"}}]))
-              batches)]
-    ;; (doseq [batch batches]
-    (check-changes changes))
-  )
+  (let [deltas (pen->detlas
+                (java.util.Random.)
+                (first (vimsical.sim.core/load-pens-from-dir vimsical.sim.core/pens-default-dir 1)))
+        batches (partition-deltas 1000 100 deltas)]
+    (dorun
+     (for [batch batches
+           delta batch]
+       (println (:id delta))))))

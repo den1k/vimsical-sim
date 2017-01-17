@@ -32,19 +32,20 @@
 ;; * Events
 
 (def ignored-events #{:chsk/ws-ping})
-(def error-events #{:store.sync.protocol.response/error})
+(def error-events #{:vims/new-session})
 
-(defn matches-event?
+(defn event-matches?
   [e events]
+  (debug "WS event:" e)
   (cond
     (keyword? e) (contains? events e)
-    (vector? e)  (matches-event? (first e) events)
+    (vector? e)  (event-matches? (first e) events)
     :else        (assert false)))
 
 (defn poll-error
   [conn-chan]
   (when-let [e (a/poll! conn-chan)]
-    (if (matches-event? e error-events)
+    (if (event-matches? e error-events)
       e
       (debug "Ignoring event" e))))
 
@@ -57,9 +58,7 @@
   [txt]
   (map (fn [e] (do (debug txt e) e))))
 
-(def ignore-events-xf
-  (remove (fn [e] (matches-event? e ignored-events))))
-
+(def ignore-events-xf (remove (fn [e] (event-matches? e ignored-events))))
 (def read-xf (comp (map sente-unpack) ignore-events-xf))
 (def write-xf (map sente-pack))
 
@@ -82,7 +81,6 @@
         [(valid-handshake? handshake) (assoc ctx :ws-chan conn-chan)])
       (catch Throwable t
         (error t)))))
-
 
 ;; * Steps
 

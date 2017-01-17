@@ -27,23 +27,17 @@
 
 ;; * Ticks
 
-(defn tick
-  [^Random rng skew bias]
-  (long (* 100 (double (/ 60 (double (skew-rand rng 100 400 skew bias)))))))
-
-(defn new-mutable-tick
-  ([^Random rng]
-   (let [skew     (* 3 (.nextGaussian rng))
-         bias     (* 2 (.nextGaussian rng))]
-     (new-mutable-tick rng skew bias)))
-  ([^Random rng skew bias]
-   (let [total    (atom 0)]
-     (fn mutable-tick []
-       (swap! total + (tick rng skew bias))))))
-
-(defn gaussian
+(defn gaussian ^double
   [^Random rng]
   (.nextGaussian rng))
+
+(defn tick
+  ([^Random rng]
+   (let [skew (* 3 (gaussian rng))
+         bias (* 2 (gaussian rng))]
+     (tick rng skew bias)))
+  ([^Random rng skew bias]
+   (long (* 100 (double (/ 60 (double (skew-rand rng 100 400 skew bias))))))))
 
 
 ;; * Testing

@@ -1,14 +1,15 @@
 (ns vimsical.sim.steps.vims-session
   (:require
    [clojure.core.async :as a]
+   [vimsical.sim.util.uuid :as uuid]
    [taoensso.timbre :refer [debug error]]))
 
 (defn ctx->tx
-  [{:keys [app-user-id vims-id]}]
-  {:pre [(number? app-user-id) (number? vims-id)]}
+  [{:keys [app-user-uuid vims-uuid]}]
+  {:pre [(uuid/uuid? app-user-uuid) (uuid/uuid? vims-uuid)]}
   [(list 'vims/new-session
-         {:store.sync.protocol/user-id app-user-id
-          :store.sync.protocol/vims-id vims-id})])
+         {:store.sync.protocol/user-uuid app-user-uuid
+          :store.sync.protocol/vims-uuid vims-uuid})])
 
 (defn valid-resp?
   [resp]
