@@ -13,10 +13,14 @@
   {:post [(->> % :steps (every? map?))]}
   {:name   id
    :weight (Integer/parseInt views)
-   :steps  (into
+   :steps  (concat
+            ;; Pre
             [(rng/new-rng-step rng)
              user/user-step
              vims/create-vims-step
-             ws-client/ws-chan-step
+             ws-client/ws-conn-step
              vims-session/vims-session-step]
-            (changes/new-pen-changes-steps rng batch-interval-ms batch-max-count pen))})
+            ;; Changes
+            (changes/new-pen-changes-steps rng batch-interval-ms batch-max-count pen)
+            ;; Cleanup
+            [ws-client/ws-cleanup-step])})

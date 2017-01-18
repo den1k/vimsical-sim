@@ -48,20 +48,19 @@
 
 (defn- merge-vims-ctx
   [ctx {:keys [body] :as resp}]
-  {:pre  [body]
-   :post [(some? (:app-user-uuid %))
-          (some? (:vims-uuid %))
-          (some? (:branch-uuid %))
-          (seq (:files %))]}
   (let [user                              (-> body :app/user :user)
         {:keys [user/vimsae]}             user
         {:keys [vims/branches] :as vims}  (last vimsae)
-        {:keys [branch/files] :as branch} (first branches)]
-    (merge ctx
-           {:app-user-uuid (:user/uuid user)
-            :vims-uuid     (:vims/uuid vims)
-            :branch-uuid   (:branch/uuid branch)
-            :files         files})))
+        {:keys [branch/files] :as branch} (first branches)
+        user-uuid                         (:user/uuid user)
+        vims-uuid                         (:vims/uuid vims)
+        branch-uuid                       (:branch/uuid branch)]
+    (if (and user-uuid vims-uuid branch-uuid (seq files))
+      (merge ctx {:app-user-uuid user-uuid
+                  :vims-uuid     vims-uuid
+                  :branch-uuid   branch-uuid
+                  :files         files})
+      (throw (ex-info"Vims response" {:response resp}) ))))
 
 (defn create-vims-step-fn
   [{:keys [remote-url headers] :as ctx}]

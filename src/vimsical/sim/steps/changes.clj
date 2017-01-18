@@ -125,13 +125,14 @@
         (debug "Step" ctx)
         (if-some [err (ws-client/poll-error ws-chan)]
           ;; No retry strategy yet...
-          (error "error" err)
+          (do
+            (error "error" err)
+            [false (ws-client/ws-cleanup-ctx ctx)])
           (let [tx     (deltas->tx deltas token branch-uuid files)
-                _ (debug tx)
+                _      (debug tx)
                 _offer (a/offer! ws-chan tx)]
             (when-not _offer
-              (a/close! ws-chan)
-              (error "offer failed"))
+              [false (ws-client/ws-cleanup-ctx ctx)])
             _offer))
         (catch Throwable t
           (a/close! ws-chan)

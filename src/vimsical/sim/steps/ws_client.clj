@@ -62,7 +62,7 @@
 (def read-xf (comp (map sente-unpack) ignore-events-xf))
 (def write-xf (map sente-pack))
 
-(defn ws-chan-step-fn
+(defn ws-conn-step-fn
   [{:keys [ws-url headers user-id] :as ctx}]
   {:pre [ws-url headers]}
   (a/go
@@ -78,14 +78,23 @@
             handshake   (a/<! conn-chan)]
         (when-not (valid-handshake? handshake)
           (error "invalid handshake" handshake))
-        [(valid-handshake? handshake) (assoc ctx :ws-chan conn-chan)])
+        [(valid-handshake? handshake) (assoc ctx :ws-chan conn-chan :ws-client client-chan)])
       (catch Throwable t
         (error t)))))
 
+(defn ws-cleanup-ctx
+  [ctx]
+  (-> ctx
+      (update :ws-chan a/close!)
+      (update :ws-client a/close!)))
+
 ;; * Steps
 
-(def ws-chan-step
+(def ws-conn-step
   {:name    "Assoc :ws-chan in the ctx map"
-   :request ws-chan-step-fn})
+   :request ws-conn-step-fn})
 
 
+(def ws-cleanup-step
+  {:name "Cleanup ws conn and client"
+   :request ws-cleanup-ctx})

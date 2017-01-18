@@ -2,6 +2,7 @@
   (:require
    [clojure.core.async :as a]
    [vimsical.sim.util.uuid :as uuid]
+   [vimsical.sim.steps.ws-client :as ws-client]
    [taoensso.timbre :refer [debug error]]))
 
 (defn ctx->tx
@@ -24,9 +25,11 @@
 (defn merge-resp
   [ctx resp]
   (try
-    (let [[[_ {:keys [store.sync.protocol/token]}]] resp]
-      (debug "token" token)
-      (assoc ctx :token token))
+    (if (valid-resp? resp)
+      (let [[[_ {:keys [store.sync.protocol/token]}]] resp]
+        (debug "token" token)
+        (assoc ctx :token token))
+      (ws-client/ws-cleanup-ctx ctx))
     (catch Throwable t
       (error t resp))))
 
