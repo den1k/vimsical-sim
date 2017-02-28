@@ -42,12 +42,13 @@
               delta-ids             (zip-delta-ids (partial rand/tick rng) current-delta-id string)
               sub-type              (get sub-type pen-sub-type)
               {:keys [deltas time]} (reduce
-                                     (fn [{:keys [time deltas]} [id chr pad]]
+                                     (fn [{:keys [time deltas last-str-id]} [id chr pad]]
                                        (let [prev-id       (prev-delta-id id)
                                              change-amount (count chr)
                                              op            (if (pos? change-amount)
-                                                             [:str/ins prev-id (str chr)]
-                                                             [:crsr/mv prev-id])]
+                                                             [:str/ins last-str-id (str chr)]
+                                                             [:crsr/mv prev-id])
+                                             last-str-id (if (pos? change-amount) id last-str-id)]
                                          {:time   (+ (long time) (long pad))
                                           :deltas (conj
                                                    deltas
@@ -59,8 +60,9 @@
                                                     :op            op
                                                     :pad           pad
                                                     :file/sub-type sub-type
-                                                    :meta          {:timestamp time, :version 1.0}})}))
-                                     {:time 0 :deltas []} delta-ids)]
+                                                    :meta          {:timestamp time, :version 1.0}})
+                                          :last-str-id last-str-id}))
+                                     {:time 0 :deltas [] :last-str-id nil} delta-ids)]
           (recur
            (next pen-sub-types)
            (or (some-> delta-ids last first inc) current-delta-id)
@@ -84,7 +86,7 @@
      (mapv
       (fn update-delta-with-file-and-branch
         [{:keys [file/sub-type] :as delta}]
-        (let [{:keys [file/uuid]} (find-file-by-sub-type sub-type files)]
+        (let [{:keys [db/uuid]} (find-file-by-sub-type sub-type files)]
           (-> delta
               (dissoc :file/sub-type)
               (assoc :file-uuid uuid :branch-uuid branch-uuid))))
@@ -103,12 +105,12 @@
          size  (volatile! 0)]
      (partition-by
       (fn [{:keys [pad] :as delta}]
-        (if-not (or (>= (vswap! t unchecked-add pad) max-batch-interval-ms)
-                    (>= (vswap! size unchecked-inc) max-batch-count))
-          @batch
+        (if (or (>= (vswap! t + pad) max-batch-interval-ms)
+                (>= (vswap! size inc) max-batch-count))
           (do (vreset! size 0)
               (vreset! t 0)
-              (vswap! batch inc))))
+              (vswap! batch inc))
+          @batch))
       deltas))))
 
 
