@@ -31,7 +31,8 @@
 
 (defn- pen->detlas
   [rng {:keys [code]}]
-  (let [sub-type {:html :html :css :css :js :javascript}]
+  (let [sub-type {:html :html :css :css :js :javascript}
+        ts       (.getTime (java.util.Date.))]
     (loop [[pen-sub-type :as pen-sub-types] [:html :css :js]
            current-delta-id                 0
            time-acc                         0
@@ -48,19 +49,19 @@
                                              op            (if (pos? change-amount)
                                                              [:str/ins last-str-id (str chr)]
                                                              [:crsr/mv prev-id])
-                                             last-str-id (if (pos? change-amount) id last-str-id)]
-                                         {:time   (+ (long time) (long pad))
-                                          :deltas (conj
-                                                   deltas
-                                                   {:id            id
-                                                    :prev-id       prev-id
-                                                    ;; Edits in a new file don't
-                                                    ;; have a :prev-same-id
-                                                    :prev-same-id  (when (seq deltas) prev-id)
-                                                    :op            op
-                                                    :pad           pad
-                                                    :file/sub-type sub-type
-                                                    :meta          {:timestamp time, :version 1.0}})
+                                             last-str-id   (if (pos? change-amount) id last-str-id)]
+                                         {:time        (+ (long time) (long pad))
+                                          :deltas      (conj
+                                                        deltas
+                                                        {:id            id
+                                                         :prev-id       prev-id
+                                                         ;; Edits in a new file don't
+                                                         ;; have a :prev-same-id
+                                                         :prev-same-id  (when (seq deltas) prev-id)
+                                                         :op            op
+                                                         :pad           pad
+                                                         :file/sub-type sub-type
+                                                         :meta          {:timestamp (+ ts time,) :version 1.0}})
                                           :last-str-id last-str-id}))
                                      {:time 0 :deltas [] :last-str-id nil} delta-ids)]
           (recur
