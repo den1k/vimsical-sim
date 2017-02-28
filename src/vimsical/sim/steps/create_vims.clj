@@ -2,7 +2,7 @@
   (:require
    [clojure.core.async :as a]
    [om.tempid :as om]
-   [taoensso.timbre :refer [debug error]]
+   [taoensso.timbre :refer [info debug error]]
    [vimsical.sim.steps.user :as user]
    [vimsical.sim.util.http :as http]
    [vimsical.sim.util.uuid :as uuid]))
@@ -11,7 +11,7 @@
 
 (defn- create-vims-query
   []
-  (let [user-uuid (uuid/uuid)
+  (let [user-uuid      (uuid/uuid)
         vims-uuid      (uuid/uuid)
         branch-uuid    (uuid/uuid)
         html-file-uuid (uuid/uuid)
@@ -21,23 +21,23 @@
      [(list
        'vims/new
        {:tx
-        {:user/uuid user-uuid,
+        {:db/uuid user-uuid,
          :user/vimsae
-         [{:vims/uuid          vims-uuid
+         [{:db/uuid            vims-uuid
            :vims/title         "foo"
-           :vims/owner         {:user/uuid       user-uuid
+           :vims/owner         {:db/uuid         user-uuid
                                 :user/first-name "foo"
                                 :user/last-name  "bar"}
-           :vims/master-branch {:branch/uuid branch-uuid}
-           :vims/branches      [{:branch/uuid  branch-uuid
-                                 :branch/owner {:user/uuid user-uuid}
-                                 :branch/files [{:file/uuid     html-file-uuid
+           :vims/master-branch {:db/uuid branch-uuid}
+           :vims/branches      [{:db/uuid      branch-uuid
+                                 :branch/owner {:db/uuid user-uuid}
+                                 :branch/files [{:db/uuid       html-file-uuid
                                                  :file/type     :text
                                                  :file/sub-type :html}
-                                                {:file/uuid     css-file-uuid
+                                                {:db/uuid       css-file-uuid
                                                  :file/type     :text
                                                  :file/sub-type :css}
-                                                {:file/uuid     js-file-uuid
+                                                {:db/uuid       js-file-uuid
                                                  :file/type     :text
                                                  :file/sub-type :javascript}]}]}]}})]
      user/app-user-query)))
@@ -48,18 +48,19 @@
 
 (defn- merge-vims-ctx
   [ctx {:keys [body] :as resp}]
-  (let [user                              (-> body :app/user :user)
+  (let [{:keys [app/user]}                body
         {:keys [user/vimsae]}             user
         {:keys [vims/branches] :as vims}  (last vimsae)
         {:keys [branch/files] :as branch} (first branches)
-        user-uuid                         (:user/uuid user)
-        vims-uuid                         (:vims/uuid vims)
-        branch-uuid                       (:branch/uuid branch)]
+        user-uuid                         (:db/uuid user)
+        vims-uuid                         (:db/uuid vims)
+        branch-uuid                       (:db/uuid branch)]
     (if (and user-uuid vims-uuid branch-uuid (seq files))
-      (merge ctx {:app-user-uuid user-uuid
-                  :vims-uuid     vims-uuid
-                  :branch-uuid   branch-uuid
-                  :files         files})
+      (do (info "Created vims" vims-uuid "user" user-uuid)
+          (merge ctx {:app-user-uuid user-uuid
+                      :vims-uuid     vims-uuid
+                      :branch-uuid   branch-uuid
+                      :files         files}))
       (throw (ex-info"Vims response" {:response resp}) ))))
 
 (defn create-vims-step-fn

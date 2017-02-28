@@ -7,46 +7,46 @@
 
 (def app-user-query
   '[{:app/user
-     [:user/uuid
+     [:db/uuid
       :user/first-name
       :user/last-name
       :user/email
       {:user/vimsae
-       [:vims/uuid
+       [:db/uuid
         :vims/title
-        {:vims/owner [:user/uuid :user/first-name :user/last-name]}
+        {:vims/owner [:db/uuid :user/first-name :user/last-name]}
         {:vims/master-branch
-         [:branch/uuid
+         [:db/uuid
           {:branch/parent ...}
           :branch/entry-delta-id
           :branch/start-delta-id
           :branch/created-at
           {:branch/files
-           [:file/uuid
+           [:db/uuid
             :file/type
             :file/sub-type]}
           {:branch/owner
-           [:user/uuid
+           [:db/uuid
             :user/first-name
             :user/last-name]}]}
         {:vims/branches
-         [:branch/uuid
+         [:db/uuid
           {:branch/parent ...}
           :branch/entry-delta-id
           :branch/start-delta-id
           :branch/created-at
           {:branch/files
-           [:file/uuid
+           [:db/uuid
             :file/type
             :file/sub-type]}
           {:branch/owner
-           [:user/uuid
+           [:db/uuid
             :user/first-name
             :user/last-name]}]}]}
       {:user/settings
-       [:settings/uuid
+       [:db/uuid
         {:settings/playback
-         [:playback/uuid
+         [:db/uuid
           :playback/speed]}]}]}])
 
 (defn extract-session-cookie
