@@ -64,6 +64,111 @@
               :context       {:ws-url (env/env :ws-url) :remote-url (env/env :remote-url)}}]
     (gatling/run sim opts)))
 
+
 (defn -main [& _]
   (set-log-level! :info)
   (run-sim!))
+
+;; * Stats
+
+;; Getting insights on the average pen size
+
+(comment
+  (defn pen-code
+    [pen type]
+    (get-in pen [:code type]))
+
+  (defn pen-chars
+    [pen]
+    (reduce + (map (comp count (partial pen-code pen)) [:html :css :js])))
+
+  (defn scale-count
+    [cnt]
+    (let [mv    (partial * 2)
+          typos (comp mv (partial * 0.05))
+          edits (comp mv (partial * 0.1))]
+      (as-> cnt c
+        (+ c (mv c))
+        (+ c (typos c))
+        (+ c (edits c))
+        (long c))))
+
+  (defn bucket [size n]
+    (long (num (/ n size))))
+
+  (defn bucket-coll [size coll]
+    (let [freqs (frequencies (map (partial bucket size) coll))
+          total (count coll)]
+      (reduce-kv
+       (fn [m k v]
+         (assoc m k {:n v :pct (* 100 (double (/ v total)))}))
+       (sorted-map-by >) freqs)))
+
+  ;; (spit
+  ;;  (bucket-coll 1e4 (map pen-chars (load-pens-from-dir pens-dir nil))))
+
+
+  (def buckets
+    {94 1,
+     74 2,
+     71 2,
+     64 1,
+     63 1,
+     62 2,
+     59 1,
+     54 1,
+     53 1,
+     51 1,
+     50 1,
+     49 4,
+     47 3,
+     46 2,
+     45 2,
+     44 4,
+     43 4,
+     42 5,
+     41 7,
+     40 2,
+     39 4,
+     38 4,
+     37 2,
+     36 6,
+     35 6,
+     34 7,
+     33 7,
+     32 7,
+     31 7,
+     30 5,
+     29 6,
+     28 9,
+     27 7,
+     26 3,
+     25 14,
+     24 14,
+     23 7,
+     22 15,
+     21 13,
+     20 8,
+     19 17,
+     18 17,
+     17 14,
+     16 16,
+     15 21,
+     14 37,
+     13 25,
+     12 30,
+     11 46,
+     10 48,
+     9 59,
+     8 72,
+     7 93,
+     6 129,
+     5 175,
+     4 255,
+     3 406,
+     2 841,
+     1 2905,
+     0 29120})
+  (binding [*out* (clojure.java.io/writer "/Users/julien/projects/vimsical-sim/pens-size-10k-buckets.edn")]
+    (clojure.pprint/pprint (bucket-coll 1e4 (map pen-chars (load-pens-from-dir pens-dir nil))))
+    (flush)))
