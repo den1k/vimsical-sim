@@ -56,8 +56,8 @@
   (let [pens (load-pens-from-dir pens-dir pens-limit)
         sim  (sim/new-sim
               {:rng               RNG
-               :batch-interval-ms 1000
-               :batch-max-count   1000
+               :batch-interval-ms 13e3
+               :batch-max-count   1e2
                :pens              pens})
         opts {:concurrency   concurrency
               :timeout-in-ms 30000
