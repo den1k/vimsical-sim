@@ -10,7 +10,7 @@
 ;; * Query
 
 (defn- create-vims-query
-  []
+  [user-id]
   (let [user-uuid      (uuid/uuid)
         vims-uuid      (uuid/uuid)
         branch-uuid    (uuid/uuid)
@@ -26,8 +26,7 @@
          [{:db/uuid            vims-uuid
            :vims/title         "foo"
            :vims/owner         {:db/uuid         user-uuid
-                                :user/first-name "foo"
-                                :user/last-name  "bar"}
+                                :user/first-name (str "anon-" user-id)}
            :vims/master-branch {:db/uuid branch-uuid}
            :vims/branches      [{:db/uuid      branch-uuid
                                  :branch/owner {:db/uuid user-uuid}
@@ -64,7 +63,7 @@
       (throw (ex-info"Vims response" {:response resp}) ))))
 
 (defn create-vims-step-fn
-  [{:keys [remote-url headers] :as ctx}]
+  [{:keys [remote-url headers user-id] :as ctx}]
   {:pre [remote-url headers]}
   (a/go
     (try
@@ -72,7 +71,7 @@
       (let [req  {:headers        headers
                   :request-method :post
                   :url            remote-url
-                  :body           (create-vims-query)}
+                  :body           (create-vims-query user-id)}
             resp (a/<! (http/req-chan req))]
         (when-not (valid-new-vims-resp? resp)
           (error "invalid resp" resp))
